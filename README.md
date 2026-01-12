@@ -4,7 +4,7 @@ This repository builds container images for testing GitHub attestations and Kyve
 
 ## Images Produced
 
-The CI workflow builds and pushes the following images to `ghcr.io/lucchmielowski/gh-attestation-test`:
+The CI workflow **automatically cleans up all existing images first**, then builds and pushes fresh images to `ghcr.io/lucchmielowski/gh-attestation-test`:
 
 ### GitHub Attestation Images
 - **`:latest`** - Signed with GitHub build provenance attestation
@@ -60,7 +60,10 @@ git commit -m "Add cosign public key for verification"
 git push
 ```
 
-The GitHub Actions workflow will automatically build and sign all 5 images.
+The GitHub Actions workflow will:
+1. **Clean up** all existing image versions from GHCR
+2. **Build and push** all 5 fresh images in parallel
+3. **Sign** the cosign images with the appropriate versions
 
 ## Verifying Signatures
 
@@ -170,6 +173,35 @@ Ensure `COSIGN_PASSWORD` secret is set correctly.
 ### Bundle signature not found
 
 The `--bundle` flag in cosign v3 creates a `.sigstore.json` referrer. Make sure you're using cosign v3.0+ to verify bundle signatures.
+
+## Cleanup
+
+> **Note:** The CI workflow automatically cleans up all images before building new ones. Manual cleanup is only needed if you want to delete images without rebuilding.
+
+### Option 1: Manual GitHub Actions Workflow
+
+Go to **Actions → Cleanup GHCR Images → Run workflow**
+
+1. Click "Run workflow"
+2. Type `DELETE` in the confirmation field
+3. Click "Run workflow"
+
+This will delete all versions of the image from GHCR.
+
+### Option 2: Local Script
+
+```bash
+./cleanup-ghcr.sh
+```
+
+Requirements:
+- GitHub CLI (`gh`) installed and authenticated
+- Type `DELETE` when prompted to confirm
+
+The script will:
+- List all image versions
+- Delete each version from GHCR
+- Show a summary of deleted/failed versions
 
 ## Purpose
 

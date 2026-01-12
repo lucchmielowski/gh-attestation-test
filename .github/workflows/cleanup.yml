@@ -1,0 +1,63 @@
+name: Cleanup GHCR Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "DELETE" to confirm deletion of all images'
+        required: true
+        type: string
+
+permissions:
+  packages: write
+  contents: read
+
+env:
+  REGISTRY: "ghcr.io/lucchmielowski"
+  IMAGE_NAME: "gh-attestation-test"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'DELETE'
+    steps:
+      - name: Delete all image versions
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🗑️  Cleaning up all versions of ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          
+          # Get all versions of the package
+          VERSIONS=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/user/packages/container/${{ env.IMAGE_NAME }}/versions" \
+            --jq '.[].id')
+          
+          if [ -z "$VERSIONS" ]; then
+            echo "✅ No versions found. Nothing to delete."
+            exit 0
+          fi
+          
+          echo "Found $(echo "$VERSIONS" | wc -l) version(s) to delete"
+          
+          # Delete each version
+          for VERSION_ID in $VERSIONS; do
+            echo "Deleting version ID: $VERSION_ID"
+            gh api \
+              --method DELETE \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/user/packages/container/${{ env.IMAGE_NAME }}/versions/$VERSION_ID" || true
+          done
+          
+          echo "✅ Cleanup complete!"
+
+  cleanup-failed:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm != 'DELETE'
+    steps:
+      - name: Confirmation failed
+        run: |
+          echo "❌ Cleanup cancelled. You must type 'DELETE' to confirm."
+          exit 1
