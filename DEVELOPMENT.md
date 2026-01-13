@@ -163,6 +163,38 @@ spec:
                 url: https://rekor.sigstore.dev
 ```
 
+## Inspecting Signature Artifacts
+
+### View Signature Manifests in Registry
+
+```bash
+# List all tags including .sig images
+crane ls ghcr.io/lucchmielowski/cosign-testbed
+
+# Inspect a specific signature manifest
+cosign tree ghcr.io/lucchmielowski/cosign-testbed:v3-traditional
+```
+
+### Check Rekor Transparency Log (for keyless signatures)
+
+```bash
+# Search for signatures in Rekor
+rekor-cli search --artifact ghcr.io/lucchmielowski/cosign-testbed:v2-keyless
+
+# View specific Rekor entry
+rekor-cli get --uuid <uuid-from-search>
+```
+
+### Inspect Fulcio Certificates (for keyless signatures)
+
+```bash
+# Verify and show certificate details
+cosign verify \
+  --certificate-identity=https://github.com/lucchmielowski/cosign-testbed/.github/workflows/ci.yml@refs/heads/main \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+  ghcr.io/lucchmielowski/cosign-testbed:v2-keyless | jq
+```
+
 ## Local Testing
 
 ### Build Image Locally
@@ -189,14 +221,15 @@ cosign generate-key-pair
 ### Sign with Different Formats
 
 ```bash
-# Traditional key-based signing
+# Traditional key-based signing (by tag)
 cosign sign --key cosign.key test-image:local
+
+# Key-based signing by digest (recommended for multi-platform images)
+IMAGE_DIGEST=$(docker inspect test-image:local --format='{{index .RepoDigests 0}}' | cut -d'@' -f2)
+cosign sign --key cosign.key test-image@${IMAGE_DIGEST}
 
 # Keyless signing (requires OIDC provider)
 cosign sign test-image:local
-
-# Bundle format (cosign v3+)
-cosign sign --key cosign.key --bundle test-image:local
 ```
 
 ### Verify Signatures
@@ -242,6 +275,22 @@ This will delete all versions of the image from GHCR.
 - Show a summary of deleted/failed versions
 
 ## Troubleshooting
+
+### "Error: no signatures found" for v3-bundle
+
+**Cause:** The `--bundle` flag in cosign v3 doesn't work correctly with multi-platform manifest lists.
+
+**Solution:** 
+- The `:v3-bundle` image is signed using the image digest instead of the tag to work around this limitation
+- This ensures the signature is properly attached to the multi-platform manifest
+- Verification by tag still works normally
+
+```bash
+# Verification works by tag (recommended)
+cosign verify --key cosign.pub ghcr.io/lucchmielowski/cosign-testbed:v3-bundle
+```
+
+**Note:** Other images (v2-traditional, v3-traditional, etc.) don't have this issue and are signed by tag successfully.
 
 ### "Error: signing [image]: getting signer: reading key: no PEM block found"
 
@@ -306,17 +355,52 @@ cleanup (runs first)
 - `linux/amd64` (Intel/AMD x86_64)
 - `linux/arm64` (ARM64, including Apple Silicon M1/M2/M3)
 
+### Signature Artifact Types
+
+**1. Traditional OCI Signature Manifests (`.sig` images)**
+- Used by: All key-based signatures (v2-traditional, v3-traditional, v3-bundle) and as transport for keyless signatures
+- Storage: Separate OCI image in registry with `.sig` suffix
+- Format: `registry/image:sha256-<digest>.sig`
+- Compatibility: Works with all cosign versions (v1, v2, v3)
+- Created by: `cosign sign --key cosign.key` (without `--bundle` flag)
+
+**2. Cosign v3 Bundle Format (`.sigstore.json` as OCI referrer)**
+- Status: **NOT CURRENTLY USED** in this testbed
+- Reason: The `--bundle` flag in cosign v3.0.4 has compatibility issues with multi-platform manifest lists
+- Would be created by: `cosign sign --key cosign.key --bundle` (not working with multi-platform)
+- Format: `.sigstore.json` attached as OCI referrer using OCI artifacts spec
+
+**3. Keyless Signatures**
+- Used by: v2-keyless, v3-keyless
+- Storage: Traditional `.sig` image + external Fulcio certificate + Rekor transparency log entry
+- No private keys stored; uses short-lived certificates from OIDC identity
+- Verification requires checking Rekor transparency log
+
+**4. GitHub Attestations**
+- Used by: `:latest`
+- Storage: GitHub's native attestation store
+- Format: SLSA v1.0 build provenance
+- Separate from OCI registry signatures
+
+**Note on v3-bundle:** Originally intended to demonstrate cosign v3's new bundle format, but currently uses traditional signature format with digest-based signing as a workaround for multi-platform compatibility.
+
 ### Job Details
 
-| Job | Image Tag | Cosign Version | Signing Method |
-|-----|-----------|----------------|----------------|
-| `build-push-and-attest` | `:latest` | N/A | GitHub attestation |
-| `build-push-unsigned` | `:unsigned` | N/A | None |
-| `build-sign-v2-traditional` | `:v2-traditional` | v2.4.1 | Key-based (traditional) |
-| `build-sign-v2-keyless` | `:v2-keyless` | v2.4.1 | Keyless (Fulcio/Rekor) |
-| `build-sign-v3-traditional` | `:v3-traditional` | v3.0.4 | Key-based (traditional) |
-| `build-sign-v3-keyless` | `:v3-keyless` | v3.0.4 | Keyless (Fulcio/Rekor) |
-| `build-sign-v3-bundle` | `:v3-bundle` | v3.0.4 | Key-based (bundle format) |
+| Job | Image Tag | Cosign Version | Command | Artifacts Created |
+|-----|-----------|----------------|---------|-------------------|
+| `build-push-and-attest` | `:latest` | N/A | `actions/attest-build-provenance@v1` | SLSA v1.0 build provenance |
+| `build-push-unsigned` | `:unsigned` | N/A | None | No signatures |
+| `build-sign-v2-traditional` | `:v2-traditional` | v2.4.1 | `cosign sign --key cosign.key --yes :v2-traditional` | Traditional `.sig` image |
+| `build-sign-v2-keyless` | `:v2-keyless` | v2.4.1 | `cosign sign --yes :v2-keyless` | `.sig` image + Fulcio cert + Rekor entry |
+| `build-sign-v3-traditional` | `:v3-traditional` | v3.0.4 | `cosign sign --key cosign.key --yes :v3-traditional` | Traditional `.sig` image (backward compatible) |
+| `build-sign-v3-keyless` | `:v3-keyless` | v3.0.4 | `cosign sign --yes :v3-keyless` | `.sig` image + Fulcio cert + Rekor entry |
+| `build-sign-v3-bundle` | `:v3-bundle` | v3.0.4 | `cosign sign --key cosign.key --yes @digest` | Traditional `.sig` image (signed by digest) |
+
+#### Notes:
+- **Traditional `.sig` images**: Signatures stored as separate OCI images with `.sig` tag suffix (e.g., `sha256-abc123.sig`)
+- **Keyless signatures**: Use OIDC identity from GitHub Actions, verified against Fulcio certificate and Rekor transparency log
+- **v3-bundle**: Originally intended for cosign v3's bundle format (`.sigstore.json` as OCI referrer), but the `--bundle` flag is incompatible with multi-platform manifests. Currently demonstrates digest-based signing instead
+- **All signed images**: Create backward-compatible traditional OCI signature manifests
 
 ## Helper Scripts
 

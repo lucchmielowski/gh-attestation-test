@@ -282,7 +282,8 @@ jobs:
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         run: |
           echo "${{ secrets.COSIGN_PRIVATE_KEY }}" > cosign.key
-          cosign sign --key cosign.key --bundle --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:v3-bundle
+          # Sign using digest (--bundle flag doesn't work well with multi-platform manifests)
+          cosign sign --key cosign.key --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           rm cosign.key
 
   build-sign-v3-keyless:

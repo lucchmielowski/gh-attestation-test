@@ -1,0 +1,30 @@
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-cosign-testbed-keyless
+spec:
+  validationActions: [Deny]
+  webhookConfiguration:
+    timeoutSeconds: 15
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        operations: ["CREATE", "UPDATE"]
+  matchImageReferences:
+    - glob: "ghcr.io/lucchmielowski/cosign-testbed:*"
+  attestors:
+    - name: cosign
+      cosign:
+        keyless:
+          identities:
+            - subject: "https://github.com/lucchmielowski/cosign-testbed/.github/workflows/ci.yml@refs/heads/main"
+              issuer: "https://token.actions.githubusercontent.com"
+        ctlog:
+          url: "https://rekor.sigstore.dev"
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.cosign])).all(e, e > 0)
+      message: "Failed to verify keyless signature for cosign-testbed image"
