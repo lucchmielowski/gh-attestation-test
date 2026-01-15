@@ -21,7 +21,7 @@ spec:
   attestations:
     - name: sbom
       intoto:
-        type: https://spdx.dev/Document
+        type: https://spdx.dev/Document/v2.3
   
   # Define the attestor (how to verify)
   attestors:
