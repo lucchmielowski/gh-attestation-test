@@ -18,6 +18,7 @@ Container images for testing Kyverno's cosign verification against multiple cosi
 | `:v3-traditional` | v3.0.4 | Key-based (by tag) | Traditional OCI signature manifest (`.sig` image) | Backward compatible with v2 |
 | `:v3-keyless` | v3.0.4 | Keyless OIDC (by tag) | Traditional OCI signature manifest + Fulcio cert + Rekor entry | Signature in transparency log |
 | `:v3-bundle` | v3.0.4 | Key-based (by digest) | Traditional OCI signature manifest (`.sig` image) | Signed by digest for multi-platform* |
+| `:v3-rekorv2-keyless` | v3.0.6 | Keyless OIDC (by tag) | Traditional OCI signature manifest + Fulcio cert + **Rekor v2** entry | Signed against a Rekor v2 (majorApiVersion 2) log via `--signing-config`; see [kyverno#15557](https://github.com/kyverno/kyverno/issues/15557) |
 
 **\*Note on v3-bundle:** Originally intended to demonstrate the cosign v3 bundle format (`.sigstore.json` as OCI referrer), but the `--bundle` flag has compatibility issues with multi-platform manifest lists. This image demonstrates digest-based signing instead, which ensures proper signature attachment to multi-architecture images.
 
@@ -122,6 +123,12 @@ cosign verify \
   --certificate-identity=https://github.com/lucchmielowski/kyverno-cosign-testbed/.github/workflows/ci.yml@refs/heads/main \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
   ghcr.io/lucchmielowski/kyverno-cosign-testbed:v3-keyless
+
+# v3-rekorv2-keyless (verify with GitHub Actions OIDC identity; entry is logged to a Rekor v2 instance)
+cosign verify \
+  --certificate-identity=https://github.com/lucchmielowski/kyverno-cosign-testbed/.github/workflows/ci.yml@refs/heads/main \
+  --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+  ghcr.io/lucchmielowski/kyverno-cosign-testbed:v3-rekorv2-keyless
 ```
 
 ## Understanding Signature Artifacts
@@ -136,7 +143,7 @@ These store the signature as a separate OCI image in the registry with a `.sig` 
 - Signature: `ghcr.io/lucchmielowski/kyverno-cosign-testbed:sha256-abc123.sig`
 
 ### Keyless Signatures (Fulcio + Rekor)
-Created by: `:v2-keyless`, `:v3-keyless`
+Created by: `:v2-keyless`, `:v3-keyless`, `:v3-rekorv2-keyless`
 
 These use short-lived certificates from Fulcio (certificate authority) and store the signature in Rekor (transparency log). No long-lived signing keys are needed.
 
@@ -144,6 +151,8 @@ These use short-lived certificates from Fulcio (certificate authority) and store
 - Traditional OCI signature manifest (`.sig` image)
 - Fulcio certificate (embedded in signature)
 - Rekor transparency log entry
+
+**Note on `:v3-rekorv2-keyless`:** Signed with `cosign sign --signing-config signing-config-with-rekor2.json`, pointing at a Rekor v2 (`majorApiVersion: 2`) log plus a timestamp authority instead of the default Rekor v1 instance. Rekor v2 entries are DSSE-based (`"kind":"dsse","version":"0.0.2"`) and don't carry an integrated/signed-entry timestamp like Rekor v1, so a TSA timestamp is required at signing time. Added to test Kyverno's IVPOL Rekor v2 support — see [kyverno#15557](https://github.com/kyverno/kyverno/issues/15557).
 
 ### GitHub Attestations
 Created by: `:github-attestation`, `:github-sbom`

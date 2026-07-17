@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: v3-private-att
-  namespace: default
+  namespace: test
 spec:
   containers:
     - name: testbed

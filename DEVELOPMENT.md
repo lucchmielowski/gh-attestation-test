@@ -335,7 +335,7 @@ cosign verify --key cosign.pub ghcr.io/lucchmielowski/kyverno-cosign-testbed:v3-
 
 ## CI Workflow Structure
 
-The workflow consists of 8 jobs:
+The workflow consists of 9 jobs:
 
 ```
 cleanup (runs first)
@@ -347,7 +347,8 @@ cleanup (runs first)
 ├─ build-sign-v2-keyless (v2-keyless)
 ├─ build-sign-v3-traditional (v3-traditional)
 ├─ build-sign-v3-keyless (v3-keyless)
-└─ build-sign-v3-bundle (v3-bundle)
+├─ build-sign-v3-bundle (v3-bundle)
+└─ build-sign-v3-rekorv2-keyless (v3-rekorv2-keyless)
 
 (All build jobs run in parallel after cleanup completes)
 ```
@@ -372,10 +373,17 @@ cleanup (runs first)
 - Format: `.sigstore.json` attached as OCI referrer using OCI artifacts spec
 
 **3. Keyless Signatures**
-- Used by: v2-keyless, v3-keyless
+- Used by: v2-keyless, v3-keyless, v3-rekorv2-keyless
 - Storage: Traditional `.sig` image + external Fulcio certificate + Rekor transparency log entry
 - No private keys stored; uses short-lived certificates from OIDC identity
 - Verification requires checking Rekor transparency log
+- `v3-rekorv2-keyless` logs its entry to a **Rekor v2** instance (DSSE `kind`/`version: 0.0.2`
+  entry) instead of the default Rekor v1 instance, via `cosign sign --signing-config
+  signing-config-with-rekor2.json`. Rekor v2 doesn't provide an integrated/signed-entry
+  timestamp, so the signing config also configures a timestamp authority (TSA), which cosign
+  requires for keyless signing against Rekor v2. Added to validate Kyverno's
+  ImageValidatingPolicy (IVPOL) support for Rekor v2 — see
+  [kyverno#15557](https://github.com/kyverno/kyverno/issues/15557).
 
 **4. GitHub Attestations**
 - Used by: `:github-attestation` (build provenance), `:github-sbom` (SBOM)
@@ -400,6 +408,7 @@ cleanup (runs first)
 | `build-sign-v3-traditional` | `:v3-traditional` | v3.0.4 | `cosign sign --key cosign.key --yes :v3-traditional` | Traditional `.sig` image (backward compatible) |
 | `build-sign-v3-keyless` | `:v3-keyless` | v3.0.4 | `cosign sign --yes :v3-keyless` | `.sig` image + Fulcio cert + Rekor entry |
 | `build-sign-v3-bundle` | `:v3-bundle` | v3.0.4 | `cosign sign --key cosign.key --yes @digest` | Traditional `.sig` image (signed by digest) |
+| `build-sign-v3-rekorv2-keyless` | `:v3-rekorv2-keyless` | v3.0.6 | `cosign sign --signing-config signing-config-with-rekor2.json --yes :v3-rekorv2-keyless` | `.sig` image + Fulcio cert + **Rekor v2** entry |
 
 #### Notes:
 - **Traditional `.sig` images**: Signatures stored as separate OCI images with `.sig` tag suffix (e.g., `sha256-abc123.sig`)
